@@ -1,0 +1,7 @@
+langchain_google_genai
+langchain 
+langgraph
+streamlit
+dotenv
+# for local development only - not for deployment
+ipykernel
