@@ -1,11 +1,13 @@
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams
+from langchain_qdrant import QdrantVectorStore
+from langchain_core.embeddings import Embeddings
 from typing import Optional, List
 import uuid
 
 
 class QdrantTempManager:
-    """Manage temporary Qdrant vector databases."""
+    """Manage temporary Qdrant vector databases with LangChain integration."""
     
     def __init__(
         self,
@@ -31,7 +33,9 @@ class QdrantTempManager:
             self.is_remote = False
         
         self.active_collections = set()
+        self.vector_stores = {}
     
+
 
 
     def create_collection(
@@ -65,6 +69,8 @@ class QdrantTempManager:
             if recreate:
                 print(f"Collection '{collection_name}' exists. Recreating...")
                 self.client.delete_collection(collection_name)
+                # Remove from vector_stores cache
+                self.vector_stores.pop(collection_name, None)
             else:
                 print(f"Collection '{collection_name}' already exists. Reusing...")
                 self.active_collections.add(collection_name)
@@ -87,6 +93,76 @@ class QdrantTempManager:
 
 
 
+    def get_vector_store(
+        self,
+        collection_name: str,
+        embeddings: Embeddings
+    ) -> QdrantVectorStore:
+        """
+        Get or create a QdrantVectorStore for the collection.
+        
+        Args:
+            collection_name: Name of the collection
+            embeddings: LangChain embeddings instance
+            
+        Returns:
+            QdrantVectorStore instance
+        """
+        # Return cached vector store if exists
+        if collection_name in self.vector_stores:
+            return self.vector_stores[collection_name]
+        
+        # Create new vector store
+        vector_store = QdrantVectorStore(
+            client=self.client,
+            collection_name=collection_name,
+            embedding=embeddings
+        )
+        
+        self.vector_stores[collection_name] = vector_store
+        return vector_store
+    
+
+
+
+
+    def create_vector_store(
+        self,
+        embeddings: Embeddings,
+        collection_name: Optional[str] = None,
+        vector_size: int = 1536,
+        distance: Distance = Distance.COSINE,
+        recreate: bool = True
+    ) -> tuple[QdrantVectorStore, str]:
+        """
+        Create collection and return QdrantVectorStore in one step.
+        
+        Args:
+            embeddings: LangChain embeddings instance
+            collection_name: Name for collection (auto-generated if None)
+            vector_size: Vector dimension
+            distance: Distance metric
+            recreate: Recreate if exists
+            
+        Returns:
+            Tuple of (QdrantVectorStore, collection_name)
+        """
+        # Create collection
+        collection = self.create_collection(
+            collection_name=collection_name,
+            vector_size=vector_size,
+            distance=distance,
+            recreate=recreate
+        )
+        
+        # Get vector store
+        vector_store = self.get_vector_store(collection, embeddings)
+        
+        return vector_store, collection
+    
+
+
+
 
     def delete_collection(self, collection_name: str) -> bool:
         """
@@ -101,30 +177,22 @@ class QdrantTempManager:
         try:
             self.client.delete_collection(collection_name)
             self.active_collections.discard(collection_name)
+            self.vector_stores.pop(collection_name, None)
             print(f"Deleted collection: '{collection_name}'")
             return True
         except Exception as e:
             print(f"Error deleting collection '{collection_name}': {e}")
             return False
     
-
-
-
     def cleanup_all(self) -> None:
         """Delete all active collections created by this manager."""
         print(f"Cleaning up {len(self.active_collections)} collections...")
         for collection_name in list(self.active_collections):
             self.delete_collection(collection_name)
-
-
-
     
     def get_client(self) -> QdrantClient:
         """Get the underlying Qdrant client."""
         return self.client
-    
-
-
     
     def list_collections(self) -> List[str]:
         """List all collections in the database."""
@@ -136,19 +204,20 @@ class QdrantTempManager:
 
 
 
-
-# Standalone function for quick setup
-def setup_temp_qdrant(
+# Standalone function for quick setup with VectorStore
+def setup_temp_vector_store(
+    embeddings: Embeddings,
     collection_name: Optional[str] = None,
     vector_size: int = 1536,
     in_memory: bool = True,
     host: Optional[str] = None,
     port: Optional[int] = None
-) -> tuple[QdrantClient, str]:
+) -> tuple[QdrantVectorStore, str, QdrantTempManager]:
     """
-    Quick setup function for temporary Qdrant database.
+    Quick setup function for temporary Qdrant VectorStore.
     
     Args:
+        embeddings: LangChain embeddings instance
         collection_name: Name for collection (auto-generated if None)
         vector_size: Vector dimension
         in_memory: Use in-memory storage (True) or disk (False)
@@ -156,21 +225,19 @@ def setup_temp_qdrant(
         port: Remote Qdrant port (optional)
         
     Returns:
-        Tuple of (QdrantClient, collection_name)
+        Tuple of (QdrantVectorStore, collection_name, manager)
     """
     location = ":memory:" if in_memory else "./temp_qdrant_data"
     
     manager = QdrantTempManager(location=location, host=host, port=port)
-    collection = manager.create_collection(
+    vector_store, collection = manager.create_vector_store(
+        embeddings=embeddings,
         collection_name=collection_name,
         vector_size=vector_size,
         recreate=True
     )
     
-    return manager.get_client(), collection
-
-
-
+    return vector_store, collection, manager
 
 
 
@@ -178,30 +245,44 @@ def setup_temp_qdrant(
 
 # Example usage
 if __name__ == "__main__":
-    # Method 1: Using the manager class
-    print("=== Method 1: Using Manager Class ===")
-    manager = QdrantTempManager(location=":memory:")
+    # from langchain_openai import OpenAIEmbeddings
+    # # or from langchain_huggingface import HuggingFaceEmbeddings
     
-    # Create a collection
-    collection_name = manager.create_collection(
-        collection_name="my_docs",
-        vector_size=1536,
-        recreate=True
-    )
+    # # Initialize embeddings
+    # embeddings = OpenAIEmbeddings()
     
-    # Get client for operations
-    client = manager.get_client()
-    print(f"Active collections: {manager.list_collections()}")
+    # print("=== Method 1: Using Manager Class ===")
+    # # Create manager
+    # manager = QdrantTempManager(location=":memory:")
     
-    # Cleanup when done
-    manager.cleanup_all()
+    # # Create vector store
+    # vector_store, collection_name = manager.create_vector_store(
+    #     embeddings=embeddings,
+    #     collection_name="my_docs",
+    #     vector_size=1536
+    # )
     
-    print("\n=== Method 2: Quick Setup Function ===")
-    # Method 2: Quick setup
-    client, collection = setup_temp_qdrant(
-        collection_name="quick_setup",
-        vector_size=1536,
-        in_memory=True
-    )
+    # # Now use the vector store
+    # # vector_store.add_documents(documents)
+    # # results = vector_store.similarity_search("query", k=5)
     
-    print(f"Ready to use collection: {collection}")
+    # print(f"VectorStore ready for collection: {collection_name}")
+    
+    # # Cleanup when done
+    # manager.cleanup_all()
+    
+    # print("\n=== Method 2: Quick Setup Function ===")
+    # # Quick setup
+    # vector_store, collection, manager = setup_temp_vector_store(
+    #     embeddings=embeddings,
+    #     collection_name="quick_setup",
+    #     vector_size=1536,
+    #     in_memory=True
+    # )
+    
+    # print(f"Ready to use VectorStore: {collection}")
+    
+    # # Don't forget cleanup
+    # manager.cleanup_all()
+
+    print()

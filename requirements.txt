@@ -7,6 +7,6 @@ dotenv
 qdrant-client
 langchain-qdrant
 pypdf
-
+faiss-cpu
 # for local development only - not for deployment
 ipykernel

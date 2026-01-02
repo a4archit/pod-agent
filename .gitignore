@@ -3,3 +3,4 @@ venv
 *.ipynb
 local_dev.md
 *.pdf
+*faiss

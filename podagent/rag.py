@@ -3,16 +3,13 @@
 #---------------------------------------------------------------------------------------------------
 
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain_qdrant import QdrantVectorStore
 from langchain_core.documents import Document
-from qdrant_client import QdrantClient
-from qdrant_client.models import VectorParams, Distance 
 from typing import Literal, Dict, List, Annotated, Optional
 
 # local 
 from pdf_processor import PDFProcessor
-from agent import PodagentConfigs
-from qdrant_manager import setup_temp_qdrant
+from configs import PodagentConfigs
+from faiss_manager import setup_temp_faiss
 
 # built in
 from configs import QDRANT_CLIENT_URL, EMBEDDING_MODEL
@@ -49,15 +46,23 @@ class ConversationalAgenticRAG:
         self.__chunk_size = 1000
         self.__overlap_size = 200
         self.__embedding_model = None
-        self.__qdrant_collection_name = "conv_agentic_rag_db"
-
-        self.__qdrant_client = QdrantClient(url=QDRANT_CLIENT_URL)
-        self.__qdrant_vector_db: QdrantVectorStore = None 
+        self.__vector_store = None 
+        self.__vector_store_manager = None 
+        self.__vector_store_name = None
 
         self.__pdf_texts: List[Document] = None
 
         # setup everything here
         self.__indexing()
+
+
+
+    def get_vector_store_manager(self):
+        return self.__vector_store_manager
+    
+
+    def get_vector_store(self):
+        return self.__vector_store_manager.get_vector_store(self.__vector_store_name)
 
 
         
@@ -95,32 +100,30 @@ class ConversationalAgenticRAG:
         # loading content 
         self.__load_pdf_texts()
 
-        # creating vector db
-        self.__create_qdrant_vector_db()
+        # setting up faiss
+        self.__setup_faiss()
+
+        # updating vector database
+        self.__vector_store.add_documents(self.__pdf_texts)
+
+        print("\n\nALL SETUP !")
 
 
 
 
 
-    def __create_qdrant_vector_db(self):
-        
-        # self.__qdrant_client.recreate_collection(
-        #     collection_name=self.__qdrant_collection_name,
-        #     vectors_config=VectorParams(
-        #         # supports: 128 - 3072, Recommended: 768, 1536, 3072 
-        #         size=1024,
-        #         distance=Distance.COSINE
-        #     )
-        # )
 
-        # creating vector database
-        self.__qdrant_vector_db = QdrantVectorStore(
-            client=self.__qdrant_client,
-            collection_name=self.__qdrant_collection_name,
-            embedding=self.__embedding_model
-        )
 
-        return True
+
+
+    def __setup_faiss(self):
+
+        self.__vector_store, self.__vector_store_name, self.__vector_store_manager = setup_temp_faiss(
+        embeddings=self.__embedding_model,
+        store_name="vector_faiss",
+        save_to_disk=True
+    )
+
 
 
 
@@ -129,12 +132,22 @@ class ConversationalAgenticRAG:
     def fetch_docs(
             self, 
             query: str,
-            tok_k: int = 3,
+            top_k: int = 3,
             conversational: bool = True,
             last_five_chat_messages: Optional[List[str]] = None
-        ) -> List[str]:
+        ) -> List[Document]:
 
-        pass 
+        # print("Enter in ConversationalAgenticRAG().fetch_docs()")
+
+        docs = self.__vector_store.similarity_search(query=query, k=top_k)
+
+        # print(f"Docs returned (from rag.py), returned docs -> {docs}")
+
+        return docs
+
+
+
+
 
 
 
@@ -145,6 +158,29 @@ class ConversationalAgenticRAG:
 if __name__ == "__main__":
 
     rag = ConversationalAgenticRAG(file_path=PodagentConfigs.pdf_path)
+
+    # manager = rag.get_vector_store_manager()
+
+    # print(manager.list_stores())
+    # print(manager.list_disk_stores())
+
+    # store = rag.get_vector_store()
+
+    # # print(type(store))
+    # # print(dir(store))
+    # print()
+
+    while True:
+
+        user = input("Your query: ")
+
+        if user.strip().lower() == "exit" :
+            break 
+
+        docs = rag.fetch_docs(query=user, conversational=False)
+
+        print(docs)
+
 
 
 
