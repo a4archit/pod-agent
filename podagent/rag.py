@@ -200,17 +200,18 @@ if __name__ == "__main__":
     # rag.indexing()
     rag.load_vector_store()
 
+    print(rag.get_vector_store_manager().list_disk_stores())
 
-    while True:
+    # while True:
 
-        user = input("Your query: ")
+    #     user = input("Your query: ")
 
-        if user.strip().lower() == "exit" :
-            break 
+    #     if user.strip().lower() == "exit" :
+    #         break 
 
-        docs = rag.fetch_docs(query=user, conversational=False)
+    #     docs = rag.fetch_docs(query=user, conversational=False)
 
-        print(docs)
+    #     print(docs)
 
 
 

@@ -38,16 +38,27 @@ class PDFProcessor:
             length_function=len,
         )
     
-    def load_pdf(self, pdf_path: str) -> List[Document]:
-        """
-        Load PDF and extract pages.
-        
+    def load_pdf(
+            self, 
+            pdf_path: str, 
+            _from: int = 0, 
+            to: int = 0
+        ) -> List[Document]:
+        """Load PDF and extract pages.
+
         Args:
-            pdf_path: Path to the PDF file
-            
+            pdf_path (str): Path to the PDF file
+            _from (int, optional): Start index. Defaults to 0.
+            to (int, optional): End index. Defaults to 0.
+
+        Raises:
+            FileNotFoundError: _description_
+            ValueError: _description_
+
         Returns:
-            List of Document objects with page content and metadata
+            List[Document]: List of Document objects with page content and metadata
         """
+        
         path = Path(pdf_path)
         
         if not path.exists():
@@ -58,6 +69,9 @@ class PDFProcessor:
         
         loader = PyPDFLoader(str(path))
         pages = loader.load()
+
+        if _from or to:
+            return pages[_from:to]
         
         return pages
     
