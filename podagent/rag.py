@@ -5,21 +5,18 @@
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_core.documents import Document
 from typing import Literal, Dict, List, Annotated, Optional
+from langchain_community.vectorstores import FAISS
 
 # local 
 from pdf_processor import PDFProcessor
 from configs import PodagentConfigs
-from faiss_manager import setup_temp_faiss, FAISSTempManager
+from faiss_manager import FAISSTempManager
 
 # built in
-from configs import QDRANT_CLIENT_URL, EMBEDDING_MODEL
+from configs import EMBEDDING_MODEL
 
 
 
-
-
-# instance of pdf processor 
-pdf_process = PDFProcessor()
 
 
 
@@ -37,32 +34,30 @@ class ConversationalAgenticRAG:
 
     def __init__(
             self,
-            file_path: str 
+            file_path: str,
+            chunk_size: int = 1000,
+            chunk_overlap: int = 200,
+            vector_store_name: Optional[str] = "vec_db_faiss"
         ):
         
         """ constructor """
 
-        self.__faiss_manager = FAISSTempManager()
+        self.__file_path: str = file_path 
+        self.__embedding_model: GoogleGenerativeAIEmbeddings = None
 
-        self.__file_path = file_path
-        self.__chunk_size = 1000
-        self.__overlap_size = 200
-        self.__embedding_model = None
+        self.__vector_store_manager = FAISSTempManager()
+        self.__vector_store_name: str = vector_store_name
+        self.__vector_store: FAISS = None 
 
-        self.__load_embedding_model()
-        self.__vector_store = self.__faiss_manager.load_vector_store(
-            "vector_faiss", embeddings=self.__embedding_model
+
+        # instance of pdf processor 
+        self.__pdf_processor = PDFProcessor(
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap
         )
-        print(self.__vector_store.docstore._dict)
-
-        self.__vector_store_manager = None 
-        self.__vector_store_name = None
-
-        self.__pdf_texts: List[Document] = None
+        self.__pdf_documents: List[Document] = None
 
 
-        # setup everything here
-        # self.__indexing() # <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< For a testing only
 
 
 
@@ -83,9 +78,9 @@ class ConversationalAgenticRAG:
 
     def __load_pdf_texts(self):
         """ It will load pdf content and update in the variable """
-        texts = pdf_process.process_pdf(pdf_path=PodagentConfigs.pdf_path)
+        extracted_docs = self.__pdf_processor.process_pdf(pdf_path=PodagentConfigs.pdf_path)
 
-        self.__pdf_texts = texts[:99] # <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< Glue code due to free quota limit, learn more about it in local_dev.md
+        self.__pdf_documents = extracted_docs[:99] # <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< Glue code due to free quota limit, learn more about it in local_dev.md
         
 
 
@@ -102,7 +97,7 @@ class ConversationalAgenticRAG:
 
 
 
-    def __indexing(self):
+    def indexing(self):
         """ Indexing - A step in RAG """
 
         # loading embedding model
@@ -114,13 +109,40 @@ class ConversationalAgenticRAG:
         # setting up faiss
         self.__setup_faiss()
 
-        # updating vector database
-        self.__vector_store.add_documents(self.__pdf_texts)
-
-        print("\n\nALL SETUP !")
+        print(f"\n\nVector Store successfully saved `{self.__vector_store_name}`, along with {len(self.__vector_store.docstore._dict)} chunks.")
 
 
 
+
+
+
+    def load_vector_store(
+            self, 
+            vector_store_name: Optional[str] = None 
+        ):
+
+        """
+        Loading an existing vector store.
+        
+        :param self: Description
+        :param vector_store_name: By default it will be `vec_db_faiss`
+        :type vector_store_name: Optional[str]
+        """
+
+        if not vector_store_name:
+            vector_store_name = self.__vector_store_name
+
+        # loading embedding model
+        self.__load_embedding_model()
+
+        self.__vector_store = self.__vector_store_manager.load_vector_store(
+            store_name=vector_store_name,
+            embeddings=self.__embedding_model
+        )
+
+        print(f"\nVector store loaded ({self.__vector_store_name}) successfully along with {len(self.__vector_store.docstore._dict)}")
+
+        
 
 
 
@@ -129,12 +151,12 @@ class ConversationalAgenticRAG:
 
     def __setup_faiss(self):
 
-        self.__vector_store, self.__vector_store_name, self.__vector_store_manager = setup_temp_faiss(
-        embeddings=self.__embedding_model,
-        store_name="vector_faiss",
-        save_to_disk=True
-    )
-
+        self.__vector_store, self.__vector_store_name = self.__vector_store_manager.create_vector_store(
+            embeddings=self.__embedding_model,
+            store_name=self.__vector_store_name,
+            documents=self.__pdf_documents,
+            save_to_disk=True 
+        )
 
 
 
@@ -148,7 +170,8 @@ class ConversationalAgenticRAG:
             last_five_chat_messages: Optional[List[str]] = None
         ) -> List[Document]:
 
-        # print("Enter in ConversationalAgenticRAG().fetch_docs()")
+        if not self.__vector_store:
+            raise(AttributeError("No vector store! Create a new or load an existing FAISS vector store before calling `ConversationalAgentRAG.fetch_docs()`"))
 
         docs = self.__vector_store.similarity_search(query=query, k=top_k)
 
@@ -174,16 +197,9 @@ if __name__ == "__main__":
 
     rag = ConversationalAgenticRAG(file_path=PodagentConfigs.pdf_path)
 
-    # manager = rag.get_vector_store_manager()
+    # rag.indexing()
+    rag.load_vector_store()
 
-    # print(manager.list_stores())
-    # print(manager.list_disk_stores())
-
-    # store = rag.get_vector_store()
-
-    # # print(type(store))
-    # # print(dir(store))
-    # print()
 
     while True:
 
