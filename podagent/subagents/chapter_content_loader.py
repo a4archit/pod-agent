@@ -77,15 +77,18 @@ llm = ChatGoogleGenerativeAI(
 
 class ChapterContentLoaderAgentState(BaseModel):
 
+    # ----------------------- input -------------------------------------
     user_query: Annotated[str, Field(..., title="user query", description="exact user query")]
+
+    # -------------------- internal state -------------------------------
     fetched_chapter_name_or_number: Optional[Dict[str,str|int|None]]
     message: Optional[str] = ""
-
     chapter_name: Optional[str] = "" 
     chapter_number: Optional[str|int] = 0
     chapter_page_number: Optional[int] = 0
     table_of_contents_page_no: Optional[int] = 0
 
+    # ------------------------- output -----------------------------------
     chapter_content: Optional[str] = ""
 
 
@@ -398,6 +401,18 @@ workflow = graph.compile()
 
 
 
+
+
+
+
+
+#------------------------------------------------------------------------------------------
+# loader function: helps agent to be use in another file
+#------------------------------------------------------------------------------------------
+ 
+def load_chapter_content_loader_agent():
+
+    return workflow 
 
 
 

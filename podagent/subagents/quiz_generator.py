@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 
 # internal
 from rag import ConversationalAgenticRAG
-from configs import PodagentConfigs
+from configs import PodagentConfigs, Quiz
 from utils import get_clean_chunks, load_pdf_content
 
 # built in
@@ -45,7 +45,7 @@ llm = ChatGoogleGenerativeAI(
 
 
 #------------------------------------------------------------------------------------------
-# Schema and state
+# Agent's state and some schemas
 #------------------------------------------------------------------------------------------
 
  
@@ -56,9 +56,11 @@ class MCQ(BaseModel):
 
 
 class GenerateQuizAgentState(BaseModel):
-
+    # ------------------------------- input ----------------------------
     chapter_content: Annotated[str, Field(..., title="content", description="fetched chapter content")]
-    number_of_questions: int = 5
+    number_of_questions: Optional[int] = 5
+
+    # ------------------------------- output ---------------------------
     quiz: Optional[List[MCQ]] = None
 
 
@@ -172,7 +174,12 @@ def generate_quiz_node(state: GenerateQuizAgentState):
         'number_of_questions':number_of_questions
     })
 
-    return { "quiz": response.model_dump() }
+    quiz = response.model_dump()
+
+    # saving quiz in configs.py file
+    Quiz.MCQS = quiz.copy()
+
+    return { "quiz": quiz }
 
 
 

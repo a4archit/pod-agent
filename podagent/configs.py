@@ -16,3 +16,8 @@ class PodagentConfigs:
 
 
 
+class Quiz:
+
+    MCQS: dict 
+
+
